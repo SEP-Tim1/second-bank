@@ -22,10 +22,7 @@
             "main": "src/main.ts",
             "polyfills": "src/polyfills.ts",
             "tsConfig": "tsconfig.app.json",
-            "assets": [
-              "src/favicon.ico",
-              "src/assets"
-            ],
+            "assets": ["src/favicon.ico", "src/assets"],
             "styles": [
               "./node_modules/@angular/material/prebuilt-themes/purple-green.css",
               "src/styles.css"
@@ -69,8 +66,8 @@
           "options": {
             "port": 4301,
             "ssl": true,
-            "sslCert": "./ssl/bank1-front.crt",
-            "sslKey": "./ssl/bank1-front.key"
+            "sslCert": "./ssl/bank2-front.crt",
+            "sslKey": "./ssl/bank2-front.key"
           },
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
@@ -96,10 +93,7 @@
             "polyfills": "src/polyfills.ts",
             "tsConfig": "tsconfig.spec.json",
             "karmaConfig": "karma.conf.js",
-            "assets": [
-              "src/favicon.ico",
-              "src/assets"
-            ],
+            "assets": ["src/favicon.ico", "src/assets"],
             "styles": [
               "./node_modules/@angular/material/prebuilt-themes/purple-green.css",
               "src/styles.css"

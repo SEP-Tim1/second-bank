@@ -44,4 +44,12 @@ public class Transaction {
         this.currency = invoice.getCurrency().toString();
         this.created = LocalDateTime.now();
     }
+
+    public Transaction(long fromId, long toId, BigDecimal amount, String currency, LocalDateTime created) {
+        this.fromId = fromId;
+        this.toId = toId;
+        this.amount = amount;
+        this.currency = currency;
+        this.created = created;
+    }
 }
