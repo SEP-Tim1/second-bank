@@ -32,7 +32,7 @@ public class AccountService {
     private final ExchangeService exchangeService;
     private final PccClient pccClient;
     private static final long MIG = 603759;
-    private static final String BANK_NUMBER = "00000";
+    private static final String BANK_NUMBER = "00001";
 
     @Autowired
     public AccountService(AccountRepository accountRepository, CreditCardService cardService, InvoiceRepository invoiceRepository, TransactionRepository transactionRepository, ExchangeService exchangeService, PccClient pccClient){
