@@ -124,7 +124,7 @@ public class AccountService {
         BigDecimal amountToMove = exchangeService.exchange(invoice.getCurrency(), invoice.getAmount(), seller.getCurrency());
 
         PCCRequestDTO request = new PCCRequestDTO(invoice.getId(), invoice.getTransaction().getCreated(), dto.getPan(), dto.getCardHolderName(), dto.getExpirationDate(), dto.getSecurityCode(), amountToMove, seller.getCurrency().toString(), seller.getId());
-        PCCResponseDTO response = pccClient.bankPaymentResponse(URI.create("abgk"),request);
+        PCCResponseDTO response = pccClient.bankPaymentResponse(URI.create("${pcc.transfer}"),request);
 
         Transaction transaction = transactionRepository.save(new Transaction(invoice, response.getFromId(), seller.getId()));
         invoice.setTransaction(transaction);
@@ -135,7 +135,7 @@ public class AccountService {
         return invoice;
     }
 
-    private Transaction receiveRequestFromPcc (PCCRequestDTO request) throws CreditCardNotFoundException, NoMoneyException {
+    public PCCResponseDTO receiveRequestFromPcc (PCCRequestDTO request) throws CreditCardNotFoundException {
         CreditCard card = cardService.getByPAN(request.getPanNumber());
         if(!isCardInThisBank(card.getPAN()))
             throw new CreditCardNotFoundException();
@@ -146,11 +146,12 @@ public class AccountService {
 
             buyer.setBalance(buyer.getBalance().subtract(request.getAmount()));
             accountRepository.save(buyer);
-            return transaction;
+            PCCResponseDTO response = new PCCResponseDTO("SUCCESS", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), transaction.getCreated(), buyer.getId());
+            return response;
         } else {
-            throw new NoMoneyException();
+            PCCResponseDTO response = new PCCResponseDTO("NO_MONEY", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), LocalDateTime.now(), buyer.getId());
+            return response;
         }
-
     }
 
     private boolean isCardInThisBank(String pan){

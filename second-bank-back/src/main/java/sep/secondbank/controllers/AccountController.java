@@ -5,6 +5,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import sep.secondbank.dtos.CardInfoDTO;
 import sep.secondbank.dtos.MerchantCredentialsDTO;
+import sep.secondbank.dtos.PCCRequestDTO;
+import sep.secondbank.dtos.PCCResponseDTO;
 import sep.secondbank.exceptions.*;
 import sep.secondbank.model.Account;
 import sep.secondbank.model.Invoice;
@@ -62,6 +64,11 @@ public class AccountController {
         } catch (InvoiceNotFoundException | CurrencyUnsupportedException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
+    }
+
+    @PostMapping("receiveRequestFromPCC")
+    public PCCResponseDTO receivePccRequest(@RequestBody PCCRequestDTO dto) throws CreditCardNotFoundException {
+        return accountService.receiveRequestFromPcc(dto);
     }
 
     @PostMapping("validate")
