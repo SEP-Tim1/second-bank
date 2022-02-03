@@ -56,7 +56,7 @@ public class AccountController {
             try {
                 invoice = accountService.pay(dto, invoice);
                 return ResponseEntity.ok(invoiceService.notifySuccess(invoice, ""));
-            } catch (InvoiceAlreadyPaidException | NoMoneyException e) {
+            } catch (InvoiceAlreadyPaidException | NoMoneyException | ExternalTransferException e) {
                 return ResponseEntity.ok(invoiceService.notifyFailure(invoice, e.getMessage()));
             } catch (CreditCardInfoNotValidException | CreditCardNotFoundException e) {
                 return ResponseEntity.ok(invoiceService.notifyError(invoice, e.getMessage()));
@@ -67,7 +67,7 @@ public class AccountController {
     }
 
     @PostMapping("receiveRequestFromPCC")
-    public PCCResponseDTO receivePccRequest(@RequestBody PCCRequestDTO dto) throws CreditCardNotFoundException {
+    public PCCResponseDTO receivePccRequest(@RequestBody PCCRequestDTO dto) {
         return accountService.receiveRequestFromPcc(dto);
     }
 

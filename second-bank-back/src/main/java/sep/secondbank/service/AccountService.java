@@ -7,11 +7,9 @@ import org.springframework.stereotype.Service;
 import sep.secondbank.clients.PccClient;
 import sep.secondbank.dtos.*;
 import sep.secondbank.exceptions.*;
-import sep.secondbank.model.Account;
-import sep.secondbank.model.CreditCard;
-import sep.secondbank.model.Invoice;
-import sep.secondbank.model.Transaction;
+import sep.secondbank.model.*;
 import sep.secondbank.repositories.AccountRepository;
+import sep.secondbank.repositories.CreditCardRepository;
 import sep.secondbank.repositories.InvoiceRepository;
 import sep.secondbank.repositories.TransactionRepository;
 import sep.secondbank.util.CreditCardValidator;
@@ -42,6 +40,7 @@ public class AccountService {
         this.transactionRepository = transactionRepository;
         this.exchangeService = exchangeService;
         this.pccClient = pccClient;
+
     }
 
     public Account getById(long id) throws AccountNotFoundException {
@@ -66,13 +65,13 @@ public class AccountService {
     }
 
     public Invoice getInvoice(long invoiceId) throws InvoiceNotFoundException {
-        if (!invoiceRepository.findById(invoiceId).isPresent()) {
+        if (invoiceRepository.findById(invoiceId).isEmpty()) {
             throw new InvoiceNotFoundException();
         }
         return invoiceRepository.findById(invoiceId).get();
     }
 
-    public Invoice pay(CardInfoDTO dto, Invoice invoice) throws InvoiceAlreadyPaidException, NoMoneyException, CreditCardNotFoundException, CreditCardInfoNotValidException, CurrencyUnsupportedException {
+    public Invoice pay(CardInfoDTO dto, Invoice invoice) throws InvoiceAlreadyPaidException, NoMoneyException, CreditCardNotFoundException, CreditCardInfoNotValidException, CurrencyUnsupportedException, ExternalTransferException {
         if (invoice.getTransaction() != null) {
             log.warn("Attempt to pay invoice (id=" + invoice.getId() + ") that was already payed for");
             throw new InvoiceAlreadyPaidException();
@@ -118,27 +117,36 @@ public class AccountService {
         }
     }
 
-    private Invoice callPCC(CardInfoDTO dto, Invoice invoice){
+    private Invoice callPCC(CardInfoDTO dto, Invoice invoice) throws ExternalTransferException {
         //TODO : make pcc client and second bank
         Account seller = accountRepository.getById(invoice.getAccountId());
         BigDecimal amountToMove = exchangeService.exchange(invoice.getCurrency(), invoice.getAmount(), seller.getCurrency());
 
         PCCRequestDTO request = new PCCRequestDTO(invoice.getId(), invoice.getTransaction().getCreated(), dto.getPan(), dto.getCardHolderName(), dto.getExpirationDate(), dto.getSecurityCode(), amountToMove, seller.getCurrency().toString(), seller.getId());
         PCCResponseDTO response = pccClient.bankPaymentResponse(URI.create("${pcc.transfer}"),request);
-
-        Transaction transaction = transactionRepository.save(new Transaction(invoice, response.getFromId(), seller.getId()));
-        invoice.setTransaction(transaction);
-        invoiceRepository.save(invoice);
-        seller.setBalance(seller.getBalance().add(amountToMove));
-        accountRepository.save(seller);
-
-        return invoice;
+        if (response.getStatus().equals("SUCCESS")) {
+            Transaction transaction = transactionRepository.save(new Transaction(invoice, response.getFromId(), seller.getId()));
+            invoice.setTransaction(transaction);
+            invoiceRepository.save(invoice);
+            seller.setBalance(seller.getBalance().add(amountToMove));
+            accountRepository.save(seller);
+            return invoice;
+        } else {
+            log.warn("Attempt to pay invoice (id=" + invoice.getId() + ") was denied by external bank");
+            throw new ExternalTransferException();
+        }
     }
 
-    public PCCResponseDTO receiveRequestFromPcc (PCCRequestDTO request) throws CreditCardNotFoundException {
-        CreditCard card = cardService.getByPAN(request.getPanNumber());
-        if(!isCardInThisBank(card.getPAN()))
-            throw new CreditCardNotFoundException();
+    public PCCResponseDTO receiveRequestFromPcc (PCCRequestDTO request){
+        PCCResponseDTO response;
+        CreditCard card;
+        try {
+            card = cardService.getByPAN(request.getPanNumber());
+            if(!isCardInThisBank(card.getPAN()))
+                return new PCCResponseDTO("CARD_NOT_IN_THIS_BANK", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), LocalDateTime.now(),  -1);
+        } catch (CreditCardNotFoundException e) {
+            return new PCCResponseDTO("NO_CREDIT_CARD", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), LocalDateTime.now(),  -1);
+        }
         Account buyer = accountRepository.getById(card.getAccountId());
 
         if (buyer.getBalance().compareTo(request.getAmount()) > 0) {
@@ -146,12 +154,12 @@ public class AccountService {
 
             buyer.setBalance(buyer.getBalance().subtract(request.getAmount()));
             accountRepository.save(buyer);
-            PCCResponseDTO response = new PCCResponseDTO("SUCCESS", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), transaction.getCreated(), buyer.getId());
-            return response;
+            response = new PCCResponseDTO("SUCCESS", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), transaction.getCreated(), buyer.getId());
         } else {
-            PCCResponseDTO response = new PCCResponseDTO("NO_MONEY", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), LocalDateTime.now(), buyer.getId());
-            return response;
+            response = new PCCResponseDTO("NO_MONEY", request.getAcquirerOrderId(), request.getAcquirerTimeStamp(), request.getToId(), LocalDateTime.now(), buyer.getId());
+            log.warn("Attempt to pay invoice was denied because of insufficient funds (buyer id=" + buyer.getId() + ")");
         }
+        return response;
     }
 
     private boolean isCardInThisBank(String pan){
