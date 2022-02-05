@@ -1,23 +1,39 @@
 package sep.secondbank.service;
 
+import com.google.zxing.*;
+import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.google.zxing.common.HybridBinarizer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import sep.secondbank.clients.PccClient;
 import sep.secondbank.dtos.*;
 import sep.secondbank.exceptions.*;
-import sep.secondbank.model.*;
+import sep.secondbank.model.Account;
+import sep.secondbank.model.CreditCard;
+import sep.secondbank.model.Invoice;
+import sep.secondbank.model.Transaction;
 import sep.secondbank.repositories.AccountRepository;
-import sep.secondbank.repositories.CreditCardRepository;
 import sep.secondbank.repositories.InvoiceRepository;
 import sep.secondbank.repositories.TransactionRepository;
 import sep.secondbank.util.CreditCardValidator;
 
+import javax.imageio.ImageIO;
 import javax.security.auth.login.AccountNotFoundException;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 
 @Slf4j
@@ -168,5 +184,52 @@ public class AccountService {
     private boolean isCardInThisBank(String pan){
         String cardBankNumber = pan.substring(0, 5);
         return cardBankNumber.equals(BANK_NUMBER);
+    }
+
+    public Invoice payWithQR(MultipartFile qrCode, Invoice invoice) throws InvoiceAlreadyPaidException, NoMoneyException, CreditCardNotFoundException, CreditCardInfoNotValidException, CurrencyUnsupportedException, ExternalTransferException, IOException {
+        if (invoice.getTransaction() != null) {
+            log.warn("Attempt to pay invoice (id=" + invoice.getId() + ") that was already payed for");
+            throw new InvoiceAlreadyPaidException();
+        }
+        String decodedResult = getDecodedString(qrCode);
+        CardInfoDTO cardInfo = createCardInfo(decodedResult);
+
+        if(isCardInThisBank(cardInfo.getPan())) {
+            return payInThisBank(cardInfo, invoice);
+        }
+        return callPCC(cardInfo, invoice);
+    }
+
+    private CardInfoDTO createCardInfo(String decodedResult){
+        String[] tokens = decodedResult.split(";");
+        CardInfoDTO cardInfo = new CardInfoDTO(tokens[0], tokens[1], tokens[2], tokens[3]);
+        return cardInfo;
+    }
+
+    private String getDecodedString(MultipartFile qrCode) throws IOException {
+        String path = new File("src/main/resources/qrs").getAbsolutePath();
+        Path filepath = Paths.get(path, qrCode.getOriginalFilename());
+
+        try (OutputStream os = Files.newOutputStream(filepath)) {
+            os.write(qrCode.getBytes());
+        } catch (IOException e2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e2.getMessage());
+        }
+        return decodeQrCode(filepath);
+    }
+
+    public static String decodeQrCode(Path filePath) throws IOException {
+        File img = new File(filePath.toString());
+        BufferedImage bufferedImage = ImageIO.read(img);
+        LuminanceSource source = new BufferedImageLuminanceSource(bufferedImage);
+        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
+
+        try {
+            Result result = new MultiFormatReader().decode(bitmap);
+            return result.getText();
+        } catch (NotFoundException e) {
+            System.out.println("There is no QR code in the image");
+            return null;
+        }
     }
 }
